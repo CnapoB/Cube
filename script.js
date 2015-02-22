@@ -11,6 +11,10 @@ var Z=5; //высота "коробка"
 var cyc=0; //число циклов
 var bit=0; //число "переборов" за цикл
 var bits=0; //общее число "переборов"
+var starttime; //время запуска
+
+var isworker=false; //использовали ли worker при запуске
+var iWorker;
 
 //24 положения элемента в трехмерном пространстве
 //x,y,z
@@ -131,7 +135,8 @@ function prestart()
 		cycles:document.getElementById('cycles'),
 		bit:document.getElementById('bit'),
 		bits:document.getElementById('bits'),
-		startline:document.getElementById('startline')
+		startline:document.getElementById('startline'),
+		time:document.getElementById('time')
 	};
 }
 
@@ -149,6 +154,8 @@ function writenow()
 	bit=0;
 	d=viscyc.startline;
 	if(d) d.value=JSON.stringify(now);
+	d=viscyc.time;
+	if(d) d.innerHTML=(Date.now()-starttime)/1000;
 	//заполняем срезы
 	var x,y,z;
 	for(x=0;x<X;++x)
@@ -202,7 +209,7 @@ function settomatrix(i,x,y,z,s)
 	}
 }
 
-//могу ли я быть здесь
+//может ли элемент быть помещен в эту точку
 function icanbethere(i,x,y,z)
 {
 	var p,dx,dy,dz;
@@ -239,7 +246,11 @@ function cycle()
 	var lasti=-1;
 	if(z>=Z) //не нашли точку - поиск окончен
 	{
-		stop();
+		console.log('Не нашли точку');
+		if(isworker)
+			stopworker();
+		else
+			stop();
 		return;
 	}
 	while(true)//ищем, подбираем
@@ -263,8 +274,12 @@ function cycle()
 				}
 				if(y>=Y)
 				{
+					console.log('Решение невозможно');
 					//это была последняя возможная клетка, решение невозможно
-					stop();
+					if(isworker)
+						stopworker();
+					else
+						stop();
 					return;
 				}
 			}
@@ -309,9 +324,38 @@ function startcycle()
 	if(interval) setTimeout(startcycle,1);
 }
 
+//высоконагруженный цикл для worker'а
+function workercycle()
+{
+	var i=0;
+	while(true)
+	{
+		cycle();
+		//отправляем сообщения для визуализации каждые 50000 переборов, т.к. при работе этого цикла событие onmessage не обрабатывается
+		if(i>=50000 || !iswork)
+		{
+			i=0;
+			postMessage({type:'set',name:'now',data:now});
+			postMessage({type:'set',name:'bit',data:bit});
+			postMessage({type:'set',name:'bits',data:bits});
+			postMessage({type:'set',name:'box',data:box});
+			postMessage({type:'set',name:'iswork',data:iswork});
+			bit=0;
+		}
+		if(!iswork)
+			break;
+		++i;
+	}
+	//закрываем worker
+	close();
+}
+
 //функция паузы/остановки поиска
 function stop()
 {
+	//остановка через отправку сообщений не работает, т.к. в цикле worker не обрабатывает событие onmessage, поэтому просто отрубаем его
+	if(isworker && iWorker)
+		iWorker.terminate();
 	var b=document.getElementById('startbutton');
 	if(!b) return;
 	//останавливаем периодическую визуализацию
@@ -325,9 +369,16 @@ function stop()
 	b.value='Старт';
 }
 
+//функция остановки worker'а
+function stopworker()
+{
+	iswork=false;
+}
+
 //функция запуска/продолжения поиска
 function start()
 {
+	starttime=Date.now();
 	var b=document.getElementById('startbutton');
 	//восстановление текущего состояния из строки "сохранения"
 	var d=document.getElementById('startline');
@@ -337,12 +388,46 @@ function start()
 		if(a instanceof Array) now=JSON.parse(d.value); else now=[];
 	}
 	else now=[];
-	interval=setInterval(writenow,1000);
 	b.value='Стоп';
 	//выполняем предстартовую подготовку
 	prestart();
-	//запускаем цикл
-	startcycle();
+	//проверяем возможность использования worker
+	d=document.getElementById('isworker');
+	isworker=(d && d.checked && !!window.Worker);
+	if(isworker)
+	{
+		//запускаем worker, передавать будем {type:'тип передачи данных',name:'имя',data:данные}
+		iWorker=new Worker("worker.js");
+		//пишем обработчик данных
+		iWorker.onmessage=function(ev)
+		{
+			//console.log(ev.data);
+			if(ev.data.name && ev.data.type=='set')
+			{
+				switch(ev.data.name)
+				{
+					case 'now': now=ev.data.data; break;
+					case 'bit': bit=ev.data.data; break;
+					case 'bits': bits=ev.data.data; break;
+					case 'box': box=ev.data.data; writenow(); break;
+					case 'iswork': if(!ev.data.data) stop(); break;
+				}
+			}
+		};
+		//определяем массив имен данных, которые следует отправить
+		var postarray=['now','box','canbe','X','Y','Z','bit','bits','elems','E','P','isworker'];
+		//отправляем данные
+		for(var i=0;i<postarray.length;++i)
+			iWorker.postMessage({type:'set',name:postarray[i],data:window[postarray[i]]});
+		//запускаем работу
+		iWorker.postMessage('start');
+	}
+	else
+	{
+		//запускаем цикл
+		interval=setInterval(writenow,1000);
+		startcycle();
+	}
 	//выполняем визуализацию в контрольной точке
 	writenow();
 }

@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <title>Куб</title>
 <style>
 td{text-align:center; vertical-align:middle;}
@@ -19,9 +21,11 @@ td{text-align:center; vertical-align:middle;}
 <script src='script.js'></script>
 </head>
 <body>
+<label>Использовать worker <input type='checkbox' id='isworker' checked></label><br>
 Всего циклов: <span id='cycles'></span><br>
 Переборов в последнем цикле: <span id='bit'></span><br>
 Общее число переборов: <span id='bits'></span><br>
+Прошло: <span id='time'></span> сек.<br>
 Строка сохранения: <textarea id='startline' style='width:100%; height:50px;'></textarea>
 <br>
 <input id='startbutton' type='button' value='Старт'>
